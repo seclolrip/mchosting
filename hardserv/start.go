@@ -60,37 +60,6 @@ func GetDatabase() (*mongo.Database, error) {
 	return client.Database(db), nil
 }
 
-func StartCron() {
-	var osSigChan chan os.Signal = make(chan os.Signal, 1)
-	signal.Notify(osSigChan, syscall.SIGTERM)
-
-	mongodb, dbErr := GetDatabase()
-	if dbErr != nil {
-		panic("Failed to connect to MongoDB " + dbErr.Error())
-	}
-
-	cronSch, cronSchErr := gocron.NewScheduler(gocron.WithLimitConcurrentJobs(5, gocron.LimitModeReschedule))
-	if cronSchErr != nil {
-		panic("Failed to create Cron Scheduler " + cronSchErr.Error())
-	}
-
-	_, addJobErr := cronSch.NewJob(
-		gocron.CronJob("*/5 0 0 0 0 0", true),
-		gocron.NewTask(CheckPendingBuilds, mongodb),
-	)
-	if addJobErr != nil {
-		panic(addJobErr.Error())
-	}
-
-	cronSch.Start()
-
-	<-osSigChan
-	err := cronSch.Shutdown()
-	if err != nil {
-		panic("Failed to shutdown cron " + err.Error())
-	}
-}
-
 func CheckPendingBuilds(db *mongo.Database) {
 	pendingBuildsTable := db.Collection(PENDINGBUILDS)
 
@@ -172,4 +141,35 @@ func BuildAndRun(db *mongo.Database, javaversion string, username string, sshkey
 	}
 
 	return nil
+}
+
+func main() {
+	var osSigChan chan os.Signal = make(chan os.Signal, 1)
+	signal.Notify(osSigChan, syscall.SIGTERM)
+
+	mongodb, dbErr := GetDatabase()
+	if dbErr != nil {
+		panic("Failed to connect to MongoDB " + dbErr.Error())
+	}
+
+	cronSch, cronSchErr := gocron.NewScheduler(gocron.WithLimitConcurrentJobs(5, gocron.LimitModeReschedule))
+	if cronSchErr != nil {
+		panic("Failed to create Cron Scheduler " + cronSchErr.Error())
+	}
+
+	_, addJobErr := cronSch.NewJob(
+		gocron.CronJob("*/5 0 0 0 0 0", true),
+		gocron.NewTask(CheckPendingBuilds, mongodb),
+	)
+	if addJobErr != nil {
+		panic(addJobErr.Error())
+	}
+
+	cronSch.Start()
+
+	<-osSigChan
+	err := cronSch.Shutdown()
+	if err != nil {
+		panic("Failed to shutdown cron " + err.Error())
+	}
 }
