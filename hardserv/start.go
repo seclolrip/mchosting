@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -80,7 +81,7 @@ func CheckPendingBuilds(db *mongo.Database) {
 		panic("Failed to decode MongoDB Pending Server " + decodeErr.Error())
 	}
 
-	buildAndRunErr := BuildAndRun(db, findDocument.JAVAV, findDocument.USERNAME, findDocument.SSHKEY)
+	pubKey, privKey, buildAndRunErr := BuildAndRun(db, findDocument.JAVAV, findDocument.USERNAME)
 	if buildAndRunErr != nil {
 		timeoutCtx, updateCancel := context.WithTimeout(context.Background(), time.Duration(30)*time.Second)
 		defer updateCancel()
@@ -95,7 +96,7 @@ func CheckPendingBuilds(db *mongo.Database) {
 		timeoutCtx, updateCancel := context.WithTimeout(context.Background(), time.Duration(30)*time.Second)
 		defer updateCancel()
 
-		update, updateErr := pendingBuildsTable.UpdateOne(timeoutCtx, bson.M{"_id": findDocument.ObjectId}, bson.M{"$set": bson.M{"status": "completed"}})
+		update, updateErr := pendingBuildsTable.UpdateOne(timeoutCtx, bson.M{"_id": findDocument.ObjectId}, bson.M{"$set": bson.M{"status": "completed", "pubKey": pubKey, "privKey": privKey}})
 		if updateErr != nil {
 			panic("Failed to update MongoDB Created Pending Build " + updateErr.Error())
 		} else if update.MatchedCount == 0 {
@@ -104,7 +105,8 @@ func CheckPendingBuilds(db *mongo.Database) {
 	}
 }
 
-func BuildAndRun(db *mongo.Database, javaversion string, username string, sshkey string) error {
+// Returns: Pub Key, Priv Key, Error
+func BuildAndRun(db *mongo.Database, javaversion string, username string) (string, string, error) {
 	uuidv7, err := uuid.NewV7()
 	if err != nil {
 		panic(err)
@@ -113,15 +115,20 @@ func BuildAndRun(db *mongo.Database, javaversion string, username string, sshkey
 	homeDir := os.Getenv("HOME")
 	fpath := homeDir + "/mchosting/hardserv/pendingbuilds/" + uuidv7.String() + "-" + username
 	keygen := exec.Command("ssh-keygen", "-t", "ed25519", "-f", fpath, "-N", "")
+	defer clearTemp(uuidv7.String(), username)
 
 	genErr := keygen.Run()
 	if genErr != nil {
-		return fmt.Errorf("error running key-gen: %v", genErr)
+		return "", "", fmt.Errorf("error running key-gen: %v", genErr.Error())
 	}
 
 	pubKeyContents, err := os.ReadFile(fpath + ".pub")
 	if err != nil {
-		return fmt.Errorf("error reading public key file: %v", err)
+		return "", "", fmt.Errorf("error reading public key file: %v", err.Error())
+	}
+	privKeyContents, privErr := os.ReadFile(fpath)
+	if privErr != nil {
+		return "", "", fmt.Errorf("error reading private key file: %v", privErr.Error())
 	}
 
 	dockerBuildCmd := exec.Command("sudo", "docker", "build", "--build-arg", "JAVA_VERSION="+javaversion, "--build-arg", "USERUSERNAME="+username, "--build-arg", "SSHKEY="+string(pubKeyContents), "-t", "testing", "-f", "./docker/Dockerfile", ".")
@@ -129,7 +136,7 @@ func BuildAndRun(db *mongo.Database, javaversion string, username string, sshkey
 
 	dockerBuildErr := dockerBuildCmd.Run()
 	if dockerBuildErr != nil {
-		return fmt.Errorf("error running docker build: %v", dockerBuildErr.Error())
+		return "", "", fmt.Errorf("error running docker build: %v", dockerBuildErr.Error())
 	}
 
 	dockerRunCmd := exec.Command("sudo", "docker", "run", "-d", "testing")
@@ -137,10 +144,17 @@ func BuildAndRun(db *mongo.Database, javaversion string, username string, sshkey
 
 	dockerRunErr := dockerRunCmd.Run()
 	if dockerRunErr != nil {
-		return fmt.Errorf("error running docker run: %v", dockerRunErr.Error())
+		return "", "", fmt.Errorf("error running docker run: %v", dockerRunErr.Error())
 	}
 
-	return nil
+	return strings.Replace(string(pubKeyContents), "\n", "", -1), strings.Replace(string(privKeyContents), "\n", "", -1), nil
+}
+
+func clearTemp(uuidv7 string, username string) {
+	homeDir := os.Getenv("HOME")
+	fpath := homeDir + "/mchosting/hardserv/pendingbuilds/" + uuidv7 + "-" + username
+	os.Remove(fpath)
+	os.Remove(fpath + ".pub")
 }
 
 func main() {
@@ -158,7 +172,7 @@ func main() {
 	}
 
 	_, addJobErr := cronSch.NewJob(
-		gocron.CronJob("*/5 0 0 0 0 0", true),
+		gocron.CronJob("*/5 * * * * *", true),
 		gocron.NewTask(CheckPendingBuilds, mongodb),
 	)
 	if addJobErr != nil {
