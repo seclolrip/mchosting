@@ -1,7 +1,7 @@
 FROM ubuntu:22.04
 
 ARG JAVA_VERSION
-ARG USERUSERNAME
+ARG MCFILES
 ARG SSHKEY
 
 SHELL ["/bin/bash", "-c"]
@@ -11,12 +11,14 @@ RUN apt purge openjdk-* || echo "No Java Packages Installed" && \
     apt install -y openjdk-${JAVA_VERSION}-jdk openssh-server sudo vim && \
     apt clean
 
-RUN useradd -m -s /bin/bash $USERUSERNAME -G sudo && \
-    mkdir /home/$USERUSERNAME/.ssh && \
-    echo "$SSHKEY" >> /home/$USERUSERNAME/.ssh/authorized_keys && \
-    chown -R $USERUSERNAME:$USERUSERNAME /home/$USERUSERNAME/.ssh && \
-    chmod 700 /home/$USERUSERNAME/.ssh && \
-    chmod 600 /home/$USERUSERNAME/.ssh/authorized_keys
+RUN useradd -m -s /bin/bash mchosted -G sudo && \
+    mkdir /home/mchosted/.ssh && \
+    echo "$SSHKEY" >> /home/mchosted/.ssh/authorized_keys && \
+    chown -R mchosted:mchosted /home/mchosted/.ssh && \
+    chmod 700 /home/mchosted/.ssh && \
+    chmod 600 /home/mchosted/.ssh/authorized_keys
+
+COPY ${MCFILES} /home/mchosted/mcserver
 
 ENV JAVA_HOME=/usr/lib/jvm/java-${JAVA_VERSION}-openjdk-amd64
 

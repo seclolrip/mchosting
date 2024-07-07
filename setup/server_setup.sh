@@ -1,7 +1,11 @@
 #!/bin/bash
 
+#Run in base home dir
 #Remove any existing Golang installations
 sudo rm -rf go
+
+#Create Builds folder
+mkdir builds
 
 # Install Golang 1.22.2
 curl -O https://dl.google.com/go/go1.22.2.linux-amd64.tar.gz && \

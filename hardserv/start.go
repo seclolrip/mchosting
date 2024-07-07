@@ -26,7 +26,6 @@ import (
 type PendingServer struct {
 	ObjectId primitive.ObjectID `bson:"_id"`
 	JAVAV    string             `bson:"javav"`
-	USERNAME string             `bson:"username"`
 	SSHKEY   string             `bson:"sshKey"`
 }
 
@@ -81,7 +80,7 @@ func CheckPendingBuilds(db *mongo.Database) {
 		panic("Failed to decode MongoDB Pending Server " + decodeErr.Error())
 	}
 
-	pubKey, privKey, buildAndRunErr := BuildAndRun(db, findDocument.JAVAV, findDocument.USERNAME)
+	pubKey, privKey, buildAndRunErr := BuildAndRun(db, findDocument.JAVAV)
 	if buildAndRunErr != nil {
 		timeoutCtx, updateCancel := context.WithTimeout(context.Background(), time.Duration(30)*time.Second)
 		defer updateCancel()
@@ -106,41 +105,46 @@ func CheckPendingBuilds(db *mongo.Database) {
 }
 
 // Returns: Pub Key, Priv Key, Error
-func BuildAndRun(db *mongo.Database, javaversion string, username string) (string, string, error) {
+func BuildAndRun(db *mongo.Database, javaversion string) (string, string, error) {
 	uuidv7, err := uuid.NewV7()
 	if err != nil {
 		panic(err)
 	}
 
 	homeDir := os.Getenv("HOME")
-	fpath := homeDir + "/mchosting/hardserv/pendingbuilds/" + uuidv7.String() + "-" + username
-	keygen := exec.Command("ssh-keygen", "-t", "ed25519", "-f", fpath, "-N", "")
-	defer clearTemp(uuidv7.String(), username)
+	fpath := homeDir + "/builds/" + uuidv7.String()
+
+	mkdir := exec.Command("mkdir", fpath)
+	mkdirErr := mkdir.Run()
+	if mkdirErr != nil {
+		return "", "", fmt.Errorf("error running mkdir: %v", mkdirErr.Error())
+	}
+
+	keygen := exec.Command("ssh-keygen", "-t", "ed25519", "-f", fpath+"/sshkey", "-N", "")
+	defer clearTemp(uuidv7.String())
 
 	genErr := keygen.Run()
 	if genErr != nil {
 		return "", "", fmt.Errorf("error running key-gen: %v", genErr.Error())
 	}
 
-	pubKeyContents, err := os.ReadFile(fpath + ".pub")
+	pubKeyContents, err := os.ReadFile(fpath + "/sshkey.pub")
 	if err != nil {
 		return "", "", fmt.Errorf("error reading public key file: %v", err.Error())
 	}
-	privKeyContents, privErr := os.ReadFile(fpath)
+	privKeyContents, privErr := os.ReadFile(fpath + "/sshkey")
 	if privErr != nil {
 		return "", "", fmt.Errorf("error reading private key file: %v", privErr.Error())
 	}
 
-	dockerBuildCmd := exec.Command("sudo", "docker", "build", "--build-arg", "JAVA_VERSION="+javaversion, "--build-arg", "USERUSERNAME="+username, "--build-arg", "SSHKEY="+string(pubKeyContents), "-t", "testing", "-f", "./docker/Dockerfile", ".")
-	dockerBuildCmd.Dir = homeDir + "/mchosting/hardserv"
+	dockerBuildCmd := exec.Command("sudo", "docker", "build", "--build-arg", "JAVA_VERSION="+javaversion, "--build-arg", "MCFILES="+fpath+"/mcfiles", "--build-arg", "SSHKEY="+string(pubKeyContents), "-t", uuidv7.String(), "-f", homeDir+"/mchosting/hardserv/docker/Dockerfile", ".")
 
 	dockerBuildErr := dockerBuildCmd.Run()
 	if dockerBuildErr != nil {
 		return "", "", fmt.Errorf("error running docker build: %v", dockerBuildErr.Error())
 	}
 
-	dockerRunCmd := exec.Command("sudo", "docker", "run", "-d", "testing")
-	dockerRunCmd.Dir = homeDir + "/mchosting/hardserv"
+	dockerRunCmd := exec.Command("sudo", "docker", "run", "-d", uuidv7.String())
 
 	dockerRunErr := dockerRunCmd.Run()
 	if dockerRunErr != nil {
@@ -150,11 +154,10 @@ func BuildAndRun(db *mongo.Database, javaversion string, username string) (strin
 	return strings.Replace(string(pubKeyContents), "\n", "", -1), strings.Replace(string(privKeyContents), "\n", "", -1), nil
 }
 
-func clearTemp(uuidv7 string, username string) {
+func clearTemp(uuidv7 string) {
 	homeDir := os.Getenv("HOME")
-	fpath := homeDir + "/mchosting/hardserv/pendingbuilds/" + uuidv7 + "-" + username
+	fpath := homeDir + "/builds/" + uuidv7
 	os.Remove(fpath)
-	os.Remove(fpath + ".pub")
 }
 
 func main() {
