@@ -13,6 +13,7 @@ RUN apt purge openjdk-* || echo "No Java Packages Installed" && \
 
 RUN useradd -m -s /bin/bash mchosted -G sudo && \
     mkdir /home/mchosted/.ssh && \
+    mkdir /home/mchosted/mcserver && \
     echo "$SSHKEY" >> /home/mchosted/.ssh/authorized_keys && \
     chown -R mchosted:mchosted /home/mchosted/.ssh && \
     chmod 700 /home/mchosted/.ssh && \
