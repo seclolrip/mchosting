@@ -31,12 +31,19 @@ func Run() {
 
 	router := gin.Default()
 
-	authRoutes := router.Group("/")
-	authRoutes.Use(env.Authorization)
+	router.POST("/login", env.Login_Authorization)
 
-	authRoutes.POST("/upload/mods", env.Upload_Mods)
-	authRoutes.POST("/upload/modpacks", env.Upload_Modpacks)
-	authRoutes.POST("/upload/resourcepacks", env.Upload_Resourcepacks)
+	createRoutes := router.Group("/create")
+	createRoutes.Use(env.Authorization)
+
+	createRoutes.POST("/server", env.CreatePendingServer)
+
+	uploadRoutes := router.Group("/upload")
+	uploadRoutes.Use(env.Authorization, env.CheckIsOwner)
+
+	uploadRoutes.POST("/mods", env.Upload_Mods)
+	uploadRoutes.POST("/modpacks", env.Upload_Modpacks)
+	uploadRoutes.POST("/resourcepacks", env.Upload_Resourcepacks)
 
 	router.Run("localhost:8080")
 }

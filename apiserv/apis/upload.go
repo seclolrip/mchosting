@@ -13,7 +13,7 @@ import (
 )
 
 func (env *Env) Upload_Mods(c *gin.Context) {
-	userId := c.GetHeader("userId")
+	userId := c.GetHeader("UserId")
 
 	server, err := queries.GetPendingServer(env.DB, userId)
 	if err != nil {
@@ -51,7 +51,7 @@ func (env *Env) Upload_Mods(c *gin.Context) {
 }
 
 func (env *Env) Upload_Modpacks(c *gin.Context) {
-	userId := c.GetHeader("userId")
+	userId := c.GetHeader("UserId")
 
 	server, err := queries.GetPendingServer(env.DB, userId)
 	if err != nil {
@@ -89,7 +89,7 @@ func (env *Env) Upload_Modpacks(c *gin.Context) {
 }
 
 func (env *Env) Upload_Resourcepacks(c *gin.Context) {
-	userId := c.GetHeader("userId")
+	userId := c.GetHeader("UserId")
 
 	server, err := queries.GetPendingServer(env.DB, userId)
 	if err != nil {
